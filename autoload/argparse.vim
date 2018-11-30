@@ -12,12 +12,12 @@ let argparse#default = '1-DEFAULT-'  " when used as int/bool, it will be 1
 " used by argparse#transformer eval functions, the variables in this
 " dict can be directly accessed (this dict is merged into l:)
 let s:context = {}
-function! argparse#_get_context()
+fu! argparse#_get_context()
   return s:context
-endfunction
-function! argparse#_current_opts()
+endfu
+fu! argparse#_current_opts()
   return s:current_opts
-endfunction
+endfu
 
 " any number is equivalent to {x->x}
 " a char not in this dict will be used to split the var
@@ -73,7 +73,7 @@ let s:transformers['"'] = {x-> string(x)}
 "       (has a key 'call' with value of func type), this func is applied to a:var
 "    c. if the transformer is a number, then a:var is returned
 "    d. if the transformer is a string, then split(a:var, '\V'. the_string) is returned
-function! s:transform(type, var) abort
+fu! s:transform(type, var) abort
   if type(a:type) == v:t_string
     let l:F = get(s:transformers, a:type, a:type)
   else
@@ -92,7 +92,7 @@ function! s:transform(type, var) abort
     endif
     return split(a:var, '\V'. l:F, 1)
   endif
-endfunction
+endfu
 
 let s:word = '[-a-zA-Z0-9]'
 let s:leader = '[a-zA-Z0-9]'
@@ -150,7 +150,7 @@ let s:pat_positional = printf('\v^\s*(.{-})(\?(\?)?(%s)?)?$', s:types)
 " 2. if POSITIONAL is 'all' : returns the positional args as a list
 " 3. otherwise:               returns [opts, positional]
 "
-function! argparse#parse(qargs, ...) abort
+fu! argparse#parse(qargs, ...) abort
   let meta = copy(get(a:000, 0, {}))
   let opts = copy(get(a:000, 1, {}))
   if type(meta) != v:t_dict || type(opts) != v:t_dict
@@ -228,10 +228,10 @@ function! argparse#parse(qargs, ...) abort
   else
     return [opts, args]
   endif
-endfunction
+endfu
 
 " positional parameters: [IFS] [keepempty]
-function! argparse#split(str, ...)
+fu! argparse#split(str, ...)
   let IFS = get(a:000, 0, '')
   let IFS = IFS==''?get(g:, 'IFS', ''):IFS
   if IFS == ''
@@ -239,12 +239,10 @@ function! argparse#split(str, ...)
       py3 import vim, shlex
       py3 rv = shlex.split(vim.eval('a:str'))
       return py3eval('rv')
-    else has('python')
-      py3 import vim, shlex
-      py3 rv = shlex.split(vim.eval('a:str'))
-      return py3eval('rv')
     else
-
+      py import vim, shlex
+      py rv = shlex.split(vim.eval('a:str'))
+      return pyeval('rv')
     endif
   else
     let keepempty = get(a:000, 1, 0)
@@ -252,9 +250,21 @@ function! argparse#split(str, ...)
     let rv = split(a:str, printf('%s', IFS), keepempty)
     return rv
   endif
-endfunction
+endfu
 
-function! s:valid(valid_keys, key)
+fu! argparse#quote(str)
+  if has('python3')
+    py3 import vim, shlex
+    py3 rv = shlex.quote(vim.eval('a:str'))
+    return py3eval('rv')
+  else
+    py import vim, shlex
+    py rv = shlex.quote(vim.eval('a:str'))
+    return pyeval('rv')
+  endif
+endfu
+
+fu! s:valid(valid_keys, key)
   if a:valid_keys is 0
     return 1
   endif
@@ -265,7 +275,7 @@ function! s:valid(valid_keys, key)
     endif
   endfor
   return 0
-endfunction
+endfu
 
 " valid_keys: a list of pattern that defines the valid opt names
 " opts:
@@ -278,7 +288,7 @@ endfunction
 "       --opt=1 -+opt=2 => opt will be [1, 2] (the same as -+opt=1 -+opt=2)
 "   -*opt=x: extend x (should be transformed into a list or dict) to existing
 "            list or dict (use argparse#transformer#dict etc)
-function! s:add_opt(valid_keys, opts, key, varpart, append, type, var)
+fu! s:add_opt(valid_keys, opts, key, varpart, append, type, var)
   let key = substitute(a:key, '-', '_', 'g')
   if !s:valid(a:valid_keys, key)
     throw printf('key %s is not acceptable', key)
@@ -320,9 +330,10 @@ function! s:add_opt(valid_keys, opts, key, varpart, append, type, var)
   else
     throw 'parser: unexpected append type:' a:append
   endif
-endfunction
+endfu
 
-function! argparse#call(funcname, ...)
+" parse args and call funcname(opts, positionals)
+fu! argparse#call(funcname, ...)
   try
     let args = call('argparse#parse', a:000)
     if type(args) == v:t_dict  " [POSITIONAL] is 'none'
@@ -336,5 +347,5 @@ function! argparse#call(funcname, ...)
       throw printf('%s in %s', v:exception, v:throwpoint)
     endif
   endtry
-endfunction
+endfu
 
