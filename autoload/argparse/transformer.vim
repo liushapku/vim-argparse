@@ -1,10 +1,5 @@
-let s:_ = {}
-function! argparse#transformer#_set_eval_context(dict)
-  let s:_ = a:dict
-endfunction
-
-function! s:eval(str)  " change context
-  let __ = argparse#_get_context()
+function! s:eval(str) abort " merge context into local variables
+  call extend(l:, argparse#_get_context())
   let _ = argparse#_current_opts()
   try
     return eval(a:str)
@@ -13,15 +8,17 @@ function! s:eval(str)  " change context
   endtry
 endfunction
 
-function! argparse#transformer#eval(str)
+function! argparse#transformer#eval(str) abort
   return s:eval(a:str)
 endfunction
 
-
-let s:function_pattern = printf('\v([a-zA-Z_][a-zA-Z0-9_#:]*)(([%s])(.*))?', g:argparse#delimiters)
+let s:function_pattern = printf('\v([a-zA-Z_][a-zA-Z0-9_#:]*)(([%s])(.*))?$', g:argparse#delimiters)
 function! s:func(str)
   if a:str =~ '^\s*{.\+->.\+}\s*$'
     return eval(a:str)
+  endif
+  if a:str !~ s:function_pattern
+    Throw 'invalid func: '.a:str
   endif
   let rv = scripting#matchlist(a:str, s:function_pattern)
   let [funname, var, delim, params] = rv[1:4]
@@ -32,13 +29,14 @@ function! s:func(str)
     return function(funname, params)
   endif
 endfunction
+
+" parse var as a function or lambda
+" type char: ')'.
+" e.g. --a)len => a=function('len')
+"      --a){x->x*10} => a=function('<lambda>1000')
 function! argparse#transformer#func(str)
   return s:func(a:str)
 endfunction
-function! argparse#transformer#call(str)
-  return s:func(a:str)()
-endfunction
-
 
 function! argparse#transformer#list_eval(str)
   return map(split(a:str, ','), 's:eval(v:val)')
