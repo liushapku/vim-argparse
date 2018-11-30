@@ -27,7 +27,7 @@ let s:transformers = {}
 let s:transformers['' ] = 0 " any number keeps var not transformed
 let s:transformers['='] = 0 " any number keeps var not transformed
 let s:transformers['<'] = {x-> expand(x)} " --a<$SHELL => a='zsh'   --a=$SHELL => a='$SHELL'
-" eval var as an expression. s:context (which is set to the 'meta' parameter) is merged into l:
+" eval var as an expression. s:context (which is set to the meta['CONTEXT'] parameter) is merged into l:
 " ex: Parse! --a(did_ftplugin => (Parse! will have b: as context) a will be set
 "        to b:did_ftplugin
 "     --a(3*10 => a = 30
@@ -99,9 +99,10 @@ let s:leader = '[a-zA-Z0-9]'
 let s:symbol = printf('%s%s*', s:leader, s:word)
 let s:types = printf('[][(){}<>=%s]', g:argparse#delimiters)
 
+" TRY :Parse command
 " use %% in printf to denote %
 let s:pat_long = printf('\v^\s*\-([-+*])(%s)((%s)(.*))?$', s:symbol, s:types)
-" s:pat_long tokens: - append_char symbol [type char] value
+" s:pat_long tokens: - append_char name [type_char] value
 " where append_char is - or + or *
 "    if it is -: then set var as is
 "    if it is +: then append var to a list
@@ -110,8 +111,15 @@ let s:pat_long = printf('\v^\s*\-([-+*])(%s)((%s)(.*))?$', s:symbol, s:types)
 "    see s:transformers' keys with exception for '=', which
 "    will use the type from [TYPE] meta dict for this symbol if it exists
 let s:pat_short = printf('\v^\s*-(%s)(.*)$', s:leader)  " no types allowed,
-" s:pat_short tokens: - leader value
+" s:pat_short tokens: - leader_char [values]
+" where values are passed the same as positional args EXCEPT the default type
+" is taken from [TYPE] meta option and it will never be saved to last_type
 let s:pat_positional = printf('\v^\s*(.{-})(\?(\?)?(%s)?)?$', s:types)
+" s:pat_positional tokens: values[?[?][type_char]...]: eg. %?< will be expand('%')
+" %??< will be expand('%') and in addition the type '<' will be saved for later use
+" there for "1??( 2 3" will evaluate to [1,2,3] while "1?( 2 3" will be [1, '2', '3']
+"   let matched = matchlist(x, s:pat_positional)
+"   let [var, hasmodes, savemodes, type] = matched[1:4]
 
 " syntax: argparse(qargs, [meta], [default_opts])
 " starting whitespaces are trimmed, ending whitespaces are kept
@@ -151,8 +159,8 @@ let s:pat_positional = printf('\v^\s*(.{-})(\?(\?)?(%s)?)?$', s:types)
 " 3. otherwise:               returns [opts, positional]
 "
 fu! argparse#parse(qargs, ...) abort
-  let meta = copy(get(a:000, 0, {}))
-  let opts = copy(get(a:000, 1, {}))
+  let meta = deepcopy(get(a:000, 0, {}))
+  let opts = deepcopy(get(a:000, 1, {}))
   if type(meta) != v:t_dict || type(opts) != v:t_dict
     throw 'a:0 and a:1 should be dict. a:0 is the meta data, a:1 is the default opts'
   endif
@@ -160,14 +168,14 @@ fu! argparse#parse(qargs, ...) abort
   let positionalmode = argparse#utils#pop(meta, '[POSITIONAL]', '')
   let IFS = argparse#utils#pop(meta, '[IFS]', '')
   let context = argparse#utils#pop(meta, '[CONTEXT]', {})
-  let default_modes = argparse#utils#pop(meta, '[TYPE]', {})
+  let default_types = argparse#utils#pop(meta, '[TYPE]', {})
   let valid_keys = argparse#utils#pop(meta, '[NAMES]', 0)
   if type(valid_keys) == v:t_string
     let valid_keys = split(valid_keys, ',')
   endif
-  let last_mode = get(default_modes, '_', '') " last positional mode
-  call extend(meta, context, 'keep')
-  let s:context = meta
+  let last_type = get(default_types, '_', '') " last positional mode
+  let last_type = [last_type]  " wrap into a list, so it can mutated by s:parse_positional
+  let s:context = context
   let s:current_opts = opts
 
   let args = argparse#split(a:qargs, IFS)
@@ -179,15 +187,16 @@ fu! argparse#parse(qargs, ...) abort
         let [append, key, varpt, Type, var] = matchlist(x, s:pat_long)[1:5]
         let key = get(keymap, key, key)
         if Type == '='
-          let Type = get(default_modes, key, Type)
+          let Type = get(default_types, key, Type)
         endif
         call s:add_opt(valid_keys, opts, key, varpt, append, Type, var)
       elseif x =~ s:pat_short
         let [key, var] = matchlist(x, s:pat_short)[1:2]
         let key = get(keymap, key, key)
-        let types = get(default_modes, key, '')
+        let type = get(default_types, key, '')
+        let value = s:parse_positional(var, type)
         let append = '-'
-        call s:add_opt(valid_keys, opts, key, var, append, types, var)
+        call s:add_opt(valid_keys, opts, key, var, append, type, value)
       else
         if x =~ '^\s*--$'
           let lst = args[idx+1:]
@@ -204,30 +213,39 @@ fu! argparse#parse(qargs, ...) abort
     let lst = args
   endif
   if positionalmode == 'none' && len(lst) != 0
-    throw 'parse: positional type is "none" but positional args exist'
+    Throw 'parse: positional type is "none" but positional args exist'
   endif
-
-  let args = []
-  for x in lst
-    let matched = matchlist(x, s:pat_positional)
-    let [var, hasmodes, savemodes, types] = matched[1:4]
-    if hasmodes == ''
-      let types = last_mode
-    elseif savemodes == '?'
-      let last_mode = types
-    endif
-    call add(args, s:transform(types, var))
-  endfor
+  let args = map(lst, 's:parse_positional(v:val, last_type)')
   if get(opts, 'verbose', 0) || get(opts, 'v', 0)
     echomsg "Args:" string(opts) string(args)
   endif
   if positionalmode == 'none'
-    return opts
+    let rv = opts
   elseif positionalmode == 'all'
-    return args
+    let rv = args
   else
-    return [opts, args]
+    let rv = [opts, args]
   endif
+  let g:argparse#last = rv
+  return rv
+endfu
+
+" lasttype: [last_type] or last_type
+" if it is not a list, it cannot be saved using ??
+" if it is a list and ?? is used, its only element will be updated
+fu! s:parse_positional(val, lasttype)
+  let matched = matchlist(a:val, s:pat_positional)
+  let [var, hastype, savetype, type] = matched[1:4]
+  if hastype == ''  " no type provided, use lasttype
+    let type = type(a:lasttype) == v:t_list? a:lasttype[0] : a:lasttype
+  elseif savetype == '?'
+    if type(a:lasttype) == v:t_list
+      let a:lasttype[0] = type
+    else
+      Throw printf('%s: cannot use ?? to save last type', a:val)
+    endif
+  endif
+  return s:transform(type, var)
 endfu
 
 " positional parameters: [IFS] [keepempty]
