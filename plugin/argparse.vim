@@ -19,7 +19,7 @@
 " +: append to list
 " *: extend list or dict  (need to transform var to a list or dict using
 "    transformers like [/]/{/}
-command! -nargs=1 -bang Parse echo argparse#parse(<q-args>, {'[KMAP]':{'v':'verbose'}, '[CONTEXT]':(<bang>0?b: : {})})
+command! -nargs=1 -bang Parse echo argparse#parse(<q-args>, {'keymap':{'v':'verbose'}, 'context':(<bang>0?b: : {})})
 " examples
 " Parse -a4  ==> [{'a': '4'}, []]
 " Parse -a

@@ -109,11 +109,11 @@ let s:pat_long = printf('\v^\s*\-([-+*])(%s)((%s)(.*))?$', s:symbol, s:types)
 "    if it is *: then extend var (should be list or dict) to existing list or dict
 " where [type char]:
 "    see s:transformers' keys with exception for '=', which
-"    will use the type from [TYPE] meta dict for this symbol if it exists
+"    will use the type from type meta dict for this symbol if it exists
 let s:pat_short = printf('\v^\s*-(%s)(.*)$', s:leader)  " no types allowed,
 " s:pat_short tokens: - leader_char [values]
 " where values are passed the same as positional args EXCEPT the default type
-" is taken from [TYPE] meta option and it will never be saved to last_type
+" is taken from type meta option and it will never be saved to last_type
 let s:pat_positional = printf('\v^\s*(.{-})(\?(\?)?(%s)?)?$', s:types)
 " s:pat_positional tokens: values[?[?][type_char]...]: eg. %?< will be expand('%')
 " %??< will be expand('%') and in addition the type '<' will be saved for later use
@@ -130,32 +130,32 @@ let s:pat_positional = printf('\v^\s*(.{-})(\?(\?)?(%s)?)?$', s:types)
 " other keys in meta will be set as the eval context
 "
 " known mega-options:
-" -- [KMAP]: the map from --key or -key to the destination option
-"            for example: [KMAP] = {'v': 'verbose'}, so that -v1 is equiv to --verbose=1
-" -- [IFS]: field separator to tokenize the a:qargs.
-"           If emtpy, then use python shlex.split, otherwise use vim split()
-" -- [CONTEXT]: dict. used to evaluate the expression if transformer is eval or list_eval, etc
-"               'a' is used to access member 'a' (NOTE: _.a is used to access the current option a)
-"               ex: let g:x = 100
-"                   argparse('-ax --b=_.a*g:x', {'[CONTEXT]': {'x': 3}, '[TYPE]': {'a':'(', 'b':'('}})
-"                   will cause a and b to be transformed using argparse#transformer#eval
-"                   then 'a' will be 3 since in CONTEXT x is 3, 'b' will be 300 since when 'b' is parsed
-"                   'a' is 3 and 'b' is 'a*g:x' (note the use of '_.a')
-" -- [POSITIONAL]: if 'auto', then all args after the first positional
-"                  arg are treaded as positional args
-"                  if 'all', then all args are positional
-"                  if 'none', then no args should be positional
-"                  otherwise, positional args can be any where, after '--'
-"                  they are all treated as positional (default)
-" -- [TYPE]: dict, the default type of an option. Use key '_' to set default type for
-"                  positional args. see s:transform
-" -- [NAMES]: list of string or string (which will be turned into a list by splitting at ',')
-"             this defines the glob patterns that every option name should at least match one of them
-"             otherwise the option will be invalid
+" -- keymap: the map from --key or -key to the destination option
+"            for example: keymap = {'v': 'verbose'}, so that -v1 is equiv to --verbose=1
+" -- IFS: field separator to tokenize the a:qargs.
+"         If emtpy, then use python shlex.split, otherwise use vim split()
+" -- context: dict. used to evaluate the expression if transformer is eval or list_eval, etc
+"             a' is used to access member 'a' (NOTE: _.a is used to access the current option a)
+"             ex: let g:x = 100
+"                 argparse('-ax --b=_.a*g:x', {'context': {'x': 3}, 'type': {'a':'(', 'b':'('}})
+"                 will cause a and b to be transformed using argparse#transformer#eval
+"                 then 'a' will be 3 since in `context` x is 3, 'b' will be 300 since when 'b' is parsed
+"                 'a' is 3 and 'b' is 'a*g:x' (note the use of '_.a')
+" -- positional: if 'auto', then all args after the first positional or '--'
+"                arg are treaded as positional args
+"                if 'all', then all args are positional
+"                if 'none', then no args should be positional
+"                otherwise, positional args can be any where
+"                they are all treated as positional (default)
+" -- type: dict, the default type of an option. Use key '_' to set default type for
+"          positional args. see s:transform
+" -- names: list of string or string (which will be turned into a list by splitting at ',')
+"           this defines the glob patterns that every option name should at least match one of them
+"           otherwise the option will be invalid
 "
 " return:
-" 1. if POSITIONAL is 'none': returns the options as a dict
-" 2. if POSITIONAL is 'all' : returns the positional args as a list
+" 1. if `positional` is 'none': returns the options as a dict
+" 2. if `positional` is 'all' : returns the positional args as a list
 " 3. otherwise:               returns [opts, positional]
 "
 fu! argparse#parse(qargs, ...) abort
@@ -164,12 +164,12 @@ fu! argparse#parse(qargs, ...) abort
   if type(meta) != v:t_dict || type(opts) != v:t_dict
     throw 'a:0 and a:1 should be dict. a:0 is the meta data, a:1 is the default opts'
   endif
-  let keymap = argparse#utils#pop(meta, '[KMAP]', {})
-  let positionalmode = argparse#utils#pop(meta, '[POSITIONAL]', '')
-  let IFS = argparse#utils#pop(meta, '[IFS]', '')
-  let context = argparse#utils#pop(meta, '[CONTEXT]', {})
-  let default_types = argparse#utils#pop(meta, '[TYPE]', {})
-  let valid_keys = argparse#utils#pop(meta, '[NAMES]', 0)
+  let keymap = argparse#utils#pop(meta, 'keymap', {})
+  let positionalmode = argparse#utils#pop(meta, 'positional', '')
+  let IFS = argparse#utils#pop(meta, 'IFS', '')
+  let context = argparse#utils#pop(meta, 'context', {})
+  let default_types = argparse#utils#pop(meta, 'type', {})
+  let valid_keys = argparse#utils#pop(meta, 'names', 0)
   if type(valid_keys) == v:t_string
     let valid_keys = split(valid_keys, ',')
   endif
@@ -248,7 +248,7 @@ fu! s:parse_positional(val, lasttype)
   return s:transform(type, var)
 endfu
 
-" positional parameters: [IFS] [keepempty]
+" positional parameters: IFS [keepempty]
 fu! argparse#split(str, ...)
   let IFS = get(a:000, 0, '')
   let IFS = IFS==''?get(g:, 'IFS', ''):IFS
@@ -354,7 +354,7 @@ endfu
 fu! argparse#call(funcname, ...)
   try
     let args = call('argparse#parse', a:000)
-    if type(args) == v:t_dict  " [POSITIONAL] is 'none'
+    if type(args) == v:t_dict  " positional is 'none'
       let args = [args]
     endif
     return call(a:funcname, args)

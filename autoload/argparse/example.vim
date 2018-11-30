@@ -179,12 +179,12 @@ endfunction
 
 
 let s:meta = {
-      \ '[KMAP]': {'R':'replace', 'C':'continue', 'D': 'delete',
+      \ 'keymap': {'R':'replace', 'C':'continue', 'D': 'delete',
       \     'to': 'to_win', 'from': 'from_win', 'reg': 'register',
       \     'f': 'from_win', 'F' : 'from_buf', 't': 'to_win', 'T': 'to_buf',
       \     'r': 'range',  'd': 'dest',
       \     },
-      \ '[POSITIONAL]': 'auto',
+      \ 'positional': 'auto',
       \ }
 function! s:default(count, line1, line2, bang)
   let opts = argparse#utils#add_range(a:count, a:line1, a:line2)
